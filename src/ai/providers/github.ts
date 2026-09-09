@@ -8,7 +8,7 @@ export class GitHubModelsProvider extends OpenAICompatProvider {
   constructor(apiKey?: string) {
     super({
       name: 'github',
-      baseUrl: 'https://models.inference.ai.azure.com',
+      baseUrl: 'https://models.github.ai/inference',
       apiKeyEnv: 'GITHUB_TOKEN',
       modelEnv: 'GITHUB_MODEL',
       defaultModel: 'gpt-4o-mini',

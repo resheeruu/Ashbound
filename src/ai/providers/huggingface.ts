@@ -8,7 +8,7 @@ export class HuggingFaceProvider extends OpenAICompatProvider {
   constructor(apiKey?: string) {
     super({
       name: 'huggingface',
-      baseUrl: 'https://router.hugging-face.cn/v1',
+      baseUrl: 'https://router.huggingface.co/v1',
       apiKeyEnv: 'HF_TOKEN',
       modelEnv: 'HF_MODEL',
       defaultModel: 'meta-llama/Llama-3.1-8B-Instruct',

@@ -1,67 +1,69 @@
 /**
- * Mistral provider — OpenAI-compatible endpoint.
+ * Ollama Cloud provider — OpenAI-compatible endpoint.
+ * Free plan: 1 concurrent model, 5h session caps.
  *
- * Includes platform-specific message transformation:
- *   - Strips unsupported "thought-signature" fields from reasoning models
- *   - Normalizes messages for Mistral's expected format
+ * Includes reasoning_content normalization to ensure valid reasoning
+ * responses do not become empty assistant output.
  */
 import OpenAI, { type ClientOptions } from 'openai';
 import { normalizeBaseUrl } from './openai-compat.js';
-import type { AIProvider, AICompletionOptions, AIResponse, AIMessage, AIStreamChunk } from '../types.js';
+import type { AIProvider, AICompletionOptions, AIResponse, AIStreamChunk } from '../types.js';
 
-/** Remove unsupported fields from messages for Mistral reasoning models. */
-export function messagesForMistralPlatform(messages: AIMessage[]): OpenAI.Chat.ChatCompletionMessageParam[] {
-  return messages.map((m) => {
-    const cleaned: OpenAI.Chat.ChatCompletionMessageParam = {
-      role: m.role as 'system' | 'user' | 'assistant',
-      content: m.content,
-    };
-    return cleaned;
-  });
+/**
+ * Normalize reasoning output from Ollama Cloud responses.
+ * Some models return reasoning in a `reasoning_content` field.
+ * If the main content is empty but reasoning_content exists,
+ * combine them to avoid empty assistant output.
+ */
+export function normalizeReasoningContent(
+  content: string,
+  rawMeta?: Record<string, unknown>,
+): string {
+  if (content && content.trim().length > 0) return content;
+
+  const reasoning = rawMeta?.['reasoning_content'];
+  if (typeof reasoning === 'string' && reasoning.trim().length > 0) {
+    return reasoning;
+  }
+
+  return content;
 }
 
-export class MistralProvider implements AIProvider {
-  readonly name = 'mistral';
+export class OllamaCloudProvider implements AIProvider {
+  readonly name = 'ollamacloud';
   private client: OpenAI;
   private readonly defaultModel: string;
   private readonly defaultMaxTokens: number;
   private readonly defaultTemperature: number;
 
   constructor(apiKey?: string) {
-    const resolvedKey = apiKey ?? process.env['MISTRAL_API_KEY'];
+    const resolvedKey = apiKey ?? process.env['OLLAMACLOUD_API_KEY'];
     if (!resolvedKey) {
-      throw new Error('Mistral requires MISTRAL_API_KEY to be configured.');
+      throw new Error('Ollama Cloud requires OLLAMACLOUD_API_KEY to be configured.');
     }
 
-    const baseUrl = 'https://api.mistral.ai/v1';
+    const baseUrl = 'https://ollama.com/v1';
     const normalizedUrl = normalizeBaseUrl(baseUrl);
 
     const clientOpts: ClientOptions = {
       baseURL: normalizedUrl,
       apiKey: resolvedKey,
+      timeout: 120_000,
     };
 
-    const timeoutMs = process.env['MISTRAL_TIMEOUT_MS'];
-    if (timeoutMs) {
-      const parsed = parseInt(timeoutMs, 10);
-      if (!isNaN(parsed) && parsed > 0) {
-        clientOpts.timeout = parsed;
-      }
-    }
-
     this.client = new OpenAI(clientOpts);
-    this.defaultModel = process.env['MISTRAL_MODEL'] ?? 'mistral-small-latest';
+    this.defaultModel = process.env['OLLAMACLOUD_MODEL'] ?? 'auto';
     this.defaultMaxTokens = 1024;
-    this.defaultTemperature = 0.8;
+    this.defaultTemperature = 0.7;
   }
 
   private resolveModel(model?: string): string {
-    return model ?? process.env['MISTRAL_MODEL'] ?? this.defaultModel;
+    return model ?? process.env['OLLAMACLOUD_MODEL'] ?? this.defaultModel;
   }
 
   async complete(opts: AICompletionOptions): Promise<AIResponse> {
     const model = this.resolveModel(opts.model);
-    const messages = messagesForMistralPlatform(opts.messages);
+    const messages = opts.messages.map((m) => ({ role: m.role, content: m.content }));
 
     const params: OpenAI.Chat.ChatCompletionCreateParams = {
       model,
@@ -74,8 +76,13 @@ export class MistralProvider implements AIProvider {
 
     const c = await this.client.chat.completions.create(params);
     const choice = c.choices[0];
+
+    const rawContent = choice.message.content ?? '';
+    const rawMeta = c as unknown as Record<string, unknown>;
+    const content = normalizeReasoningContent(rawContent, rawMeta);
+
     return {
-      content: choice.message.content ?? '',
+      content,
       meta: { model: c.model, provider: this.name, usage: c.usage, finishReason: choice.finish_reason },
     };
   }
@@ -86,7 +93,7 @@ export class MistralProvider implements AIProvider {
     onDone?: (meta: Record<string, unknown>) => void,
   ): Promise<void> {
     const model = this.resolveModel(opts.model);
-    const messages = messagesForMistralPlatform(opts.messages);
+    const messages = opts.messages.map((m) => ({ role: m.role, content: m.content }));
 
     const params: OpenAI.Chat.ChatCompletionCreateParams = {
       model,

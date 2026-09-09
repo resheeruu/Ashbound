@@ -3,14 +3,25 @@
  *
  * Tracks per-provider health: success rate, latency, cooldown, rate limits.
  * Used by the router to skip unhealthy providers and exposed for monitoring.
+ *
+ * Enhanced with:
+ *   - Transport-error vs invalid-credential distinction
+ *   - Periodic health checks
+ *   - Cooldown recovery
+ *   - Consecutive-failure tracking with automatic temporary exclusion
+ *   - Successful live request restoring degraded keys
+ *
+ * Inspired by FreeLLMAPI's health.ts architecture.
  */
+
+import { SecretRedactor } from '../security/SecretRedactor.js';
 
 export interface ProviderHealth {
   status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
   consecutiveFailures: number;
   totalSuccesses: number;
   totalFailures: number;
-  successRate: number;       // 0..1
+  successRate: number;
   avgLatencyMs: number;
   p95LatencyMs: number;
   lastSuccessAt: number | null;
@@ -21,13 +32,15 @@ export interface ProviderHealth {
   rateLimitHits: number;
   tokensUsed: number;
   estimatedCost: number;
+  /** Whether last failure was a transport error (not invalid credentials). */
+  lastFailureIsTransport: boolean;
 }
 
 const _health = new Map<string, ProviderHealth>();
 const _latencies = new Map<string, number[]>();
 const _cooldowns = new Map<string, { until: number; reason: string }>();
 
-const LATENCY_WINDOW = 50; // keep last 50 samples for p95
+const LATENCY_WINDOW = 50;
 const P95_PERCENTILE = 0.95;
 
 const DEGRADED_FAILURE_THRESHOLD = 2;
@@ -42,13 +55,13 @@ const RATE_LIMIT_BACKOFF_MS = 60_000;
 const COST_PER_1K: Record<string, number> = {
   openai: 0.00015,
   anthropic: 0.0006,
-  gemini: 0.000075,
+  gemini: 0.0,
   groq: 0.0,
-  openrouter: 0.00015,
-  mistral: 0.0001,
+  openrouter: 0.0,
+  mistral: 0.0,
   deepseek: 0.00007,
   xai: 0.0003,
-  cohere: 0.0004,
+  cohere: 0.0,
   freellmapi: 0.0,
   cerebras: 0.0,
   nvidia: 0.0,
@@ -60,6 +73,32 @@ const COST_PER_1K: Record<string, number> = {
   zhipu: 0.0,
   ollama: 0.0,
   custom: 0.0,
+  bai: 0.0,
+  anyapi: 0.0,
+  aihorde: 0.0,
+  ollamacloud: 0.0,
+  kilo: 0.0,
+  llm7: 0.0,
+  ovh: 0.0,
+  agnes: 0.0,
+  reka: 0.0,
+  siliconflow: 0.0,
+  routeway: 0.0,
+  bazaarlink: 0.0,
+  ainative: 0.0,
+  aion: 0.0,
+  requesty: 0.0,
+  navy: 0.0,
+  nara: 0.0,
+  sealion: 0.0,
+  orcarouter: 0.0,
+  unorouter: 0.0,
+  xkiro: 0.0,
+  modelscope: 0.0,
+  qianfan: 0.0,
+  volcengine: 0.0,
+  longcat: 0.0,
+  xfyun: 0.0,
 };
 
 function getOrInit(name: string): ProviderHealth {
@@ -81,6 +120,7 @@ function getOrInit(name: string): ProviderHealth {
       rateLimitHits: 0,
       tokensUsed: 0,
       estimatedCost: 0,
+      lastFailureIsTransport: false,
     };
     _health.set(name, h);
   }
@@ -125,6 +165,8 @@ function backoffMs(failures: number): number {
   return Math.min(base + jitter, COOLDOWN_MAX_MS);
 }
 
+// ─── Error classification helpers ────────────────────────────────────────────
+
 function isRateLimitError(err: unknown): boolean {
   if (err && typeof err === 'object' && 'status' in err) return (err as { status: number }).status === 429;
   return /429|rate limit|too many requests/i.test(String(err));
@@ -133,6 +175,20 @@ function isRateLimitError(err: unknown): boolean {
 function isTimeoutError(err: unknown): boolean {
   return /timeout|ETIMEDOUT|aborted/i.test(String(err));
 }
+
+/** True when the error is a transport/DNS/TLS failure, not a credential issue. */
+function isTransportError(err: unknown): boolean {
+  if (err && typeof err === 'object' && 'status' in err) {
+    const status = (err as { status: number }).status;
+    // 401/403 = credential issue, not transport
+    if (status === 401 || status === 403) return false;
+    // 5xx = server/transport issue
+    if (status >= 500) return true;
+  }
+  return /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|network|socket hang up|fetch failed|timeout|aborted|DNS/i.test(String(err));
+}
+
+// ─── Core recording functions ────────────────────────────────────────────────
 
 export function recordSuccess(name: string, latencyMs: number, tokens = 0): void {
   const h = getOrInit(name);
@@ -152,6 +208,7 @@ export function recordFailure(name: string, err: unknown): void {
   h.totalFailures += 1;
   h.lastFailureAt = Date.now();
   h.lastError = String(err).slice(0, 200);
+  h.lastFailureIsTransport = isTransportError(err);
 
   if (isRateLimitError(err)) h.rateLimitHits += 1;
 
@@ -227,10 +284,100 @@ export function clearAllCooldowns(): void {
   }
 }
 
-setInterval(() => {
-  for (const [name, entry] of _cooldowns) {
-    if (Date.now() >= entry.until) _cooldowns.delete(name);
+// ─── Periodic health checker ─────────────────────────────────────────────────
+
+const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+let _healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+let _healthCheckRunning = false;
+
+export type HealthCheckFn = (providerName: string) => Promise<boolean>;
+
+let _checkFn: HealthCheckFn | null = null;
+
+/**
+ * Register a health check function. The router or bootstrap should call this
+ * to provide a probe that tests whether a provider's credentials are valid.
+ */
+export function registerHealthCheck(fn: HealthCheckFn): void {
+  _checkFn = fn;
+}
+
+/**
+ * Run a single-pass health check across all known providers.
+ * Skips providers on cooldown. Does not duplicate overlapping checks.
+ */
+export async function runHealthCheck(): Promise<{ checked: string[]; skipped: string[] }> {
+  if (_healthCheckRunning) {
+    console.log('[Health] Health check already in progress, skipping.');
+    return { checked: [], skipped: [] };
   }
-}, 60_000);
+
+  _healthCheckRunning = true;
+  const checked: string[] = [];
+  const skipped: string[] = [];
+
+  try {
+    for (const [name, h] of _health) {
+      if (isOnCooldown(name)) {
+        skipped.push(name);
+        continue;
+      }
+
+      if (_checkFn) {
+        try {
+          const ok = await _checkFn(name);
+          if (ok) {
+            recordSuccess(name, 0);
+          } else {
+            recordFailure(name, new Error('Health check failed'));
+          }
+          checked.push(name);
+        } catch {
+          // Transport error during health check — do not penalize
+          skipped.push(name);
+        }
+      }
+    }
+  } finally {
+    _healthCheckRunning = false;
+  }
+
+  return { checked, skipped };
+}
+
+/**
+ * Start the periodic health checker.
+ */
+export function startHealthChecker(): void {
+  if (_healthCheckTimer) return;
+  _healthCheckTimer = setInterval(async () => {
+    try {
+      await runHealthCheck();
+    } catch (err) {
+      console.error('[Health] Periodic check failed:', SecretRedactor.redactString(String(err)));
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+  _healthCheckTimer.unref();
+  console.log(`[Health] Periodic checker started (every ${HEALTH_CHECK_INTERVAL_MS / 1000}s)`);
+}
+
+/**
+ * Stop the periodic health checker.
+ */
+export function stopHealthChecker(): void {
+  if (_healthCheckTimer) {
+    clearInterval(_healthCheckTimer);
+    _healthCheckTimer = null;
+  }
+}
+
+// ─── Reset (for testing) ────────────────────────────────────────────────────
+
+export function _resetHealthState(): void {
+  _health.clear();
+  _latencies.clear();
+  _cooldowns.clear();
+  _healthCheckRunning = false;
+}
 
 export { listAvailableProviders } from './providers/index.js';

@@ -8,18 +8,26 @@ export interface AIMessage {
   content: string;
   /** For vision: image URL or base64 data URI */
   imageUrl?: string;
+  /** For tool calling: tool calls from the assistant */
+  toolCalls?: ToolCall[];
+  /** For tool calling: the ID of the tool call this message is responding to */
+  toolCallId?: string;
 }
 
 export interface AIResponse {
   content: string;
   /** Raw provider-specific metadata (model, tokens, etc.) */
   meta: Record<string, unknown>;
+  /** Tool calls requested by the model, if any */
+  toolCalls?: ToolCall[];
 }
 
 export interface AIStreamChunk {
   content: string;
   done: boolean;
   meta?: Record<string, unknown>;
+  /** Tool call chunks arriving during streaming */
+  toolCall?: ToolCallChunk;
 }
 
 export interface AICompletionOptions {
@@ -35,6 +43,10 @@ export interface AICompletionOptions {
   stream?: boolean;
   /** Stop at these sequences. */
   stop?: string[];
+  /** Tool definitions for function calling */
+  tools?: ToolDefinition[];
+  /** Tool choice policy: 'auto', 'none', or specific tool name */
+  toolChoice?: 'auto' | 'none' | string;
 }
 
 export interface AIProvider {
@@ -57,7 +69,37 @@ export interface AIProvider {
   ): Promise<void>;
 }
 
-// ─── Provider capability metadata ───────────────────────────────────────
+// ─── Tool calling types ─────────────────────────────────────────────────────
+
+export interface ToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface ToolCallChunk {
+  index: number;
+  id?: string;
+  type?: 'function';
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
+// ─── Provider capability metadata ───────────────────────────────────────────
 
 export type ProviderFailureKind =
   | 'permanent'
@@ -66,7 +108,13 @@ export type ProviderFailureKind =
   | 'model_unavailable'
   | 'network_error'
   | 'invalid_credentials'
-  | 'no_credits';
+  | 'no_credits'
+  | 'context_too_large'
+  | 'vision_unsupported'
+  | 'tools_unsupported'
+  | 'invalid_request'
+  | 'server_error'
+  | 'unknown';
 
 /** Provider state as tracked by the router. */
 export type ProviderState =
@@ -95,6 +143,10 @@ export interface ModelEntry {
   freeTier: boolean;
   /** Priority: lower = preferred. */
   priority: number;
+  /** Model aliases / group membership */
+  aliases?: string[];
+  /** Endpoint scope for custom providers */
+  endpointScope?: string;
 }
 
 /** Dynamic availability state for a model. */
@@ -105,4 +157,30 @@ export interface ModelAvailability {
   lastError: string | null;
   cooldownUntil: number | null;
   consecutiveFailures: number;
+}
+
+// ─── Usage tracking ─────────────────────────────────────────────────────────
+
+export interface UsageStats {
+  provider: string;
+  model: string;
+  requestCount: number;
+  successfulRequests: number;
+  failedRequests: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  avgLatencyMs: number;
+  firstTokenLatencyMs: number | null;
+  fallbackEvents: number;
+  cooldownEvents: number;
+  lastUsedAt: number | null;
+}
+
+// ─── Model weight overrides ─────────────────────────────────────────────────
+
+export interface ModelWeightOverride {
+  modelId: string;
+  /** Score multiplier: 0 = disabled, 1 = normal, >1 = boosted */
+  weight: number;
 }

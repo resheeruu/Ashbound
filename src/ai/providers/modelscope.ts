@@ -1,73 +1,70 @@
 /**
- * Mistral provider — OpenAI-compatible endpoint.
+ * ModelScope (Alibaba) provider — OpenAI-compatible endpoint.
+ * 2000 requests/day, requires Alibaba Cloud CN-site binding.
  *
- * Includes platform-specific message transformation:
- *   - Strips unsupported "thought-signature" fields from reasoning models
- *   - Normalizes messages for Mistral's expected format
+ * Custom validation: performs a one-token chat probe rather than
+ * treating a generic /v1/models response as proof of credentials.
  */
 import OpenAI, { type ClientOptions } from 'openai';
 import { normalizeBaseUrl } from './openai-compat.js';
-import type { AIProvider, AICompletionOptions, AIResponse, AIMessage, AIStreamChunk } from '../types.js';
+import type { AIProvider, AICompletionOptions, AIResponse, AIStreamChunk } from '../types.js';
 
-/** Remove unsupported fields from messages for Mistral reasoning models. */
-export function messagesForMistralPlatform(messages: AIMessage[]): OpenAI.Chat.ChatCompletionMessageParam[] {
-  return messages.map((m) => {
-    const cleaned: OpenAI.Chat.ChatCompletionMessageParam = {
-      role: m.role as 'system' | 'user' | 'assistant',
-      content: m.content,
-    };
-    return cleaned;
-  });
-}
-
-export class MistralProvider implements AIProvider {
-  readonly name = 'mistral';
+export class ModelScopeProvider implements AIProvider {
+  readonly name = 'modelscope';
   private client: OpenAI;
-  private readonly defaultModel: string;
-  private readonly defaultMaxTokens: number;
-  private readonly defaultTemperature: number;
+  private readonly timeoutMs: number;
 
   constructor(apiKey?: string) {
-    const resolvedKey = apiKey ?? process.env['MISTRAL_API_KEY'];
+    const resolvedKey = apiKey ?? process.env['MODELSCOPE_API_KEY'];
     if (!resolvedKey) {
-      throw new Error('Mistral requires MISTRAL_API_KEY to be configured.');
+      throw new Error('ModelScope requires MODELSCOPE_API_KEY to be configured.');
     }
 
-    const baseUrl = 'https://api.mistral.ai/v1';
+    const baseUrl = 'https://api-inference.modelscope.cn/v1';
     const normalizedUrl = normalizeBaseUrl(baseUrl);
 
     const clientOpts: ClientOptions = {
       baseURL: normalizedUrl,
       apiKey: resolvedKey,
+      defaultHeaders: {
+        'X-ModelScope-Async': 'true',
+      },
     };
 
-    const timeoutMs = process.env['MISTRAL_TIMEOUT_MS'];
-    if (timeoutMs) {
-      const parsed = parseInt(timeoutMs, 10);
-      if (!isNaN(parsed) && parsed > 0) {
-        clientOpts.timeout = parsed;
-      }
-    }
+    this.timeoutMs = 90_000;
+    clientOpts.timeout = this.timeoutMs;
 
     this.client = new OpenAI(clientOpts);
-    this.defaultModel = process.env['MISTRAL_MODEL'] ?? 'mistral-small-latest';
-    this.defaultMaxTokens = 1024;
-    this.defaultTemperature = 0.8;
+  }
+
+  /** One-token chat probe to validate credentials. */
+  async validateCredentials(): Promise<boolean> {
+    try {
+      const model = process.env['MODELSCOPE_MODEL'] ?? 'auto';
+      const c = await this.client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 1,
+      });
+      return c.choices && c.choices.length > 0;
+    } catch {
+      return false;
+    }
   }
 
   private resolveModel(model?: string): string {
-    return model ?? process.env['MISTRAL_MODEL'] ?? this.defaultModel;
+    return model ?? process.env['MODELSCOPE_MODEL'] ?? 'auto';
   }
 
   async complete(opts: AICompletionOptions): Promise<AIResponse> {
     const model = this.resolveModel(opts.model);
-    const messages = messagesForMistralPlatform(opts.messages);
+    const messages = opts.messages.map((m) => ({ role: m.role, content: m.content }));
 
     const params: OpenAI.Chat.ChatCompletionCreateParams = {
       model,
       messages,
-      max_tokens: opts.maxTokens || this.defaultMaxTokens,
-      temperature: opts.temperature ?? this.defaultTemperature,
+      max_tokens: opts.maxTokens || 1024,
+      temperature: opts.temperature ?? 0.7,
       top_p: opts.topP ?? undefined,
       stop: opts.stop ?? undefined,
     };
@@ -86,13 +83,13 @@ export class MistralProvider implements AIProvider {
     onDone?: (meta: Record<string, unknown>) => void,
   ): Promise<void> {
     const model = this.resolveModel(opts.model);
-    const messages = messagesForMistralPlatform(opts.messages);
+    const messages = opts.messages.map((m) => ({ role: m.role, content: m.content }));
 
     const params: OpenAI.Chat.ChatCompletionCreateParams = {
       model,
       messages,
-      max_tokens: opts.maxTokens || this.defaultMaxTokens,
-      temperature: opts.temperature ?? this.defaultTemperature,
+      max_tokens: opts.maxTokens || 1024,
+      temperature: opts.temperature ?? 0.7,
       top_p: opts.topP ?? undefined,
       stop: opts.stop ?? undefined,
       stream: true,

@@ -564,6 +564,7 @@ interface OpenAICompatConfig {
   envKey: string;
   envModel: string;
   baseURL: string;
+  extraHeaders?: Record<string, string>;
 }
 
 const openAICompatProviders: OpenAICompatConfig[] = [
@@ -598,6 +599,10 @@ const openAICompatProviders: OpenAICompatConfig[] = [
     envKey: 'OPENROUTER_API_KEY',
     envModel: 'OPENROUTER_MODEL',
     baseURL: 'https://openrouter.ai/api/v1',
+    extraHeaders: {
+      'HTTP-Referer': 'https://github.com/Ashbound/Ashbound',
+      'X-Title': 'Ashbound',
+    },
   },
   {
     importPath: '../providers/xai.js',
@@ -623,7 +628,9 @@ describe.each(openAICompatProviders)('$className (OpenAI-compatible)', (cfg) => 
     const mod = await import(cfg.importPath);
     const Provider = mod[cfg.className];
     new Provider('test-key');
-    expect(OpenAI).toHaveBeenCalledWith({ apiKey: 'test-key', baseURL: cfg.baseURL });
+    const expected: Record<string, unknown> = { apiKey: 'test-key', baseURL: cfg.baseURL };
+    if (cfg.extraHeaders) expected.defaultHeaders = cfg.extraHeaders;
+    expect(OpenAI).toHaveBeenCalledWith(expect.objectContaining(expected));
   });
 
   it('constructor falls back to env var', async () => {
@@ -632,7 +639,9 @@ describe.each(openAICompatProviders)('$className (OpenAI-compatible)', (cfg) => 
     const mod = await import(cfg.importPath);
     const Provider = mod[cfg.className];
     new Provider();
-    expect(OpenAI).toHaveBeenCalledWith({ apiKey: 'env-key', baseURL: cfg.baseURL });
+    const expected: Record<string, unknown> = { apiKey: 'env-key', baseURL: cfg.baseURL };
+    if (cfg.extraHeaders) expected.defaultHeaders = cfg.extraHeaders;
+    expect(OpenAI).toHaveBeenCalledWith(expect.objectContaining(expected));
   });
 
   it('complete() returns normalized AIResponse', async () => {

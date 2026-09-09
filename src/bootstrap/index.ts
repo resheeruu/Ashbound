@@ -11,6 +11,8 @@ import { registerCommands } from '../discord/register.js';
 import { setupEventHandlers } from '../discord/events.js';
 import { setupMessageHandler } from '../discord/handlers/message.js';
 import { restoreAllReminders } from '../discord/commands/remind.js';
+import '../ai/webTools.js';
+import { registerHealthCheck, startHealthChecker } from '../ai/health.js';
 
 export interface Application {
   client: Client;
@@ -53,7 +55,25 @@ export async function bootstrap(): Promise<Application> {
   // 6. Initialize AI providers
   initProviders();
 
-  // 7. Setup message handler (AI chat on mention/DM)
+  // 7. Register health check probe and start periodic health checks
+  registerHealthCheck(async (providerName: string) => {
+    const { getProvider } = await import('../ai/providers/index.js');
+    const provider = getProvider(providerName);
+    if (!provider) return false;
+    try {
+      await provider.complete({
+        messages: [{ role: 'user', content: 'ping' }],
+        maxTokens: 1,
+        temperature: 0,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  startHealthChecker();
+
+  // 8. Setup message handler (AI chat on mention/DM)
   setupMessageHandler(client);
 
   // 8. Restore persisted reminders
@@ -77,6 +97,14 @@ export async function bootstrap(): Promise<Application> {
 export function setupGracefulShutdown(application: Application): void {
   const shutdown = async (signal: string) => {
     console.log(`[Ashbound] Received ${signal}. Shutting down gracefully...`);
+
+    try {
+      const { stopHealthChecker } = await import('../ai/health.js');
+      stopHealthChecker();
+      console.log('[Ashbound] Health checker stopped.');
+    } catch {
+      // Health checker optional
+    }
 
     try {
       application.client.destroy();

@@ -6,8 +6,11 @@
  * implementation that handles all of them through configuration.
  *
  * Covers: Groq, Cerebras, Mistral, DeepSeek, xAI, Cohere, OpenRouter,
- * GitHub Models, NVIDIA NIM, B.AI, AnyAPI, LongCat, iFlytek Spark,
- * Volcengine Ark, Baidu Qianfan, and custom OpenAI-compatible endpoints.
+ * GitHub Models, NVIDIA NIM, B.AI, AnyAPI, Ollama Cloud, Kilo, LLM7, OVH,
+ * Agnes, Reka, SiliconFlow, Routeway, BazaarLink, AINative, Aion, Requesty,
+ * NavyAI, NaraRouter, SEA-LION, OrcaRouter, UnoRouter, xKiro, ModelScope,
+ * Baidu Qianfan, Volcengine Ark, LongCat, iFlytek Spark, and custom
+ * OpenAI-compatible endpoints.
  */
 
 import OpenAI, { type ClientOptions } from 'openai';
@@ -66,6 +69,7 @@ export class OpenAICompatProvider implements AIProvider {
     const clientOpts: ClientOptions = {
       baseURL: normalizedUrl,
       apiKey: resolvedKey ?? (config.keyless ? '' : undefined),
+      defaultHeaders: config.extraHeaders,
     };
 
     if (config.timeoutMs) {

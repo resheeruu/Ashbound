@@ -8,7 +8,7 @@ export class OpenCodeZenProvider extends OpenAICompatProvider {
   constructor(apiKey?: string) {
     super({
       name: 'opencodezen',
-      baseUrl: 'https://api.openCodezen.com/v1',
+      baseUrl: 'https://opencode.ai/zen/v1',
       apiKeyEnv: 'OPENCODEZEN_API_KEY',
       modelEnv: 'OPENCODEZEN_MODEL',
       defaultModel: 'auto',

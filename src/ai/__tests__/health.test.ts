@@ -1,11 +1,23 @@
 jest.useFakeTimers();
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _currentModule: any = null;
+
 function freshModule() {
+  // Stop any existing health checker before loading a new module
+  if (_currentModule?.stopHealthChecker) {
+    _currentModule.stopHealthChecker();
+  }
   jest.resetModules();
-  return require('../health');
+  _currentModule = require('../health');
+  return _currentModule;
 }
 
 afterEach(() => {
+  // Stop health checker timer to prevent open handle warnings
+  if (_currentModule?.stopHealthChecker) {
+    _currentModule.stopHealthChecker();
+  }
   jest.restoreAllMocks();
 });
 
@@ -36,6 +48,22 @@ describe('recordFailure', () => {
     expect(h.lastError).toContain('network error');
     expect(h.cooldownUntil).toBeGreaterThan(Date.now());
     expect(isOnCooldown('openai')).toBe(true);
+  });
+
+  it('marks transport errors correctly', () => {
+    const { recordFailure, getHealth } = freshModule();
+    recordFailure('openai', new Error('ECONNRESET'));
+
+    const h = getHealth('openai');
+    expect(h.lastFailureIsTransport).toBe(true);
+  });
+
+  it('marks credential errors as non-transport', () => {
+    const { recordFailure, getHealth } = freshModule();
+    recordFailure('openai', Object.assign(new Error('unauthorized'), { status: 401 }));
+
+    const h = getHealth('openai');
+    expect(h.lastFailureIsTransport).toBe(false);
   });
 });
 

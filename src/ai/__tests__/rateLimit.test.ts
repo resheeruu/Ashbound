@@ -9,7 +9,7 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-describe('isRateLimited', () => {
+describe('Per-user rate limiting', () => {
   it('first request is not rate limited', () => {
     const { isRateLimited } = freshModule();
     expect(isRateLimited('user1')).toBe(false);
@@ -72,5 +72,62 @@ describe('multiple users', () => {
     }
     expect(isRateLimited('user1')).toBe(true);
     expect(isRateLimited('user2')).toBe(false);
+  });
+});
+
+describe('Provider/model rate limiting', () => {
+  it('canMakeRequest returns true when under limits', () => {
+    const { canMakeRequest } = freshModule();
+    expect(canMakeRequest('openai', 'gpt-4o-mini', { rpm: 60, rpd: 1000, tpm: 100000, tpd: 1000000 })).toBe(true);
+  });
+
+  it('canMakeRequest returns true when limits are null', () => {
+    const { canMakeRequest } = freshModule();
+    expect(canMakeRequest('openai', 'gpt-4o-mini', { rpm: null, rpd: null, tpm: null, tpd: null })).toBe(true);
+  });
+
+  it('canUseTokens returns true when under limits', () => {
+    const { canUseTokens } = freshModule();
+    expect(canUseTokens('openai', 'gpt-4o-mini', 1000, { rpm: null, rpd: null, tpm: 100000, tpd: 1000000 })).toBe(true);
+  });
+
+  it('recordRequest tracks requests', () => {
+    const { recordRequest, canMakeRequest } = freshModule();
+    // Record many requests
+    for (let i = 0; i < 59; i++) {
+      recordRequest('openai', 'gpt-4o-mini');
+    }
+    // Should still be under RPM limit of 60
+    expect(canMakeRequest('openai', 'gpt-4o-mini', { rpm: 60, rpd: null, tpm: null, tpd: null })).toBe(true);
+  });
+
+  it('recordTokens tracks tokens', () => {
+    const { recordTokens, canUseTokens } = freshModule();
+    // Record tokens
+    for (let i = 0; i < 5; i++) {
+      recordTokens('openai', 'gpt-4o-mini', 20000);
+    }
+    // Should still be under TPM limit of 200000 (5 × 20000 = 100000)
+    expect(canUseTokens('openai', 'gpt-4o-mini', 1, { rpm: null, rpd: null, tpm: 200000, tpd: null })).toBe(true);
+  });
+
+  it('acquireLease and releaseLease work', () => {
+    const { acquireLease, releaseLease } = freshModule();
+    const leaseId = acquireLease('openai', 'gpt-4o-mini', 1000);
+    expect(typeof leaseId).toBe('number');
+    releaseLease(leaseId);
+  });
+
+  it('modelWindowUsedFraction returns null when no limits', () => {
+    const { modelWindowUsedFraction } = freshModule();
+    expect(modelWindowUsedFraction('openai', 'gpt-4o-mini', { rpm: null, rpd: null, tpm: null, tpd: null })).toBeNull();
+  });
+
+  it('setCooldown and isOnCooldown work', () => {
+    const { setCooldown, isOnCooldown } = freshModule();
+    setCooldown('openai', 'gpt-4o-mini', 60000);
+    expect(isOnCooldown('openai', 'gpt-4o-mini')).toBe(true);
+    jest.advanceTimersByTime(60001);
+    expect(isOnCooldown('openai', 'gpt-4o-mini')).toBe(false);
   });
 });

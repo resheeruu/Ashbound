@@ -28,13 +28,45 @@ import { OpenCodeZenProvider } from './opencodezen.js';
 import { ZhipuProvider }       from './zhipu.js';
 import { OllamaProvider }      from './ollama.js';
 import { CustomEndpointProvider } from './custom.js';
+import { BAIProvider }         from './bai.js';
+import { AnyAPIProvider }      from './anyapi.js';
+import { AIHordeProvider }     from './aihorde.js';
+import { OllamaCloudProvider } from './ollamacloud.js';
+import { KiloProvider }        from './kilo.js';
+import { LLM7Provider }       from './llm7.js';
+import { OVHProvider }         from './ovh.js';
+import { AgnesProvider }       from './agnes.js';
+import { RekaProvider }        from './reka.js';
+import { SiliconFlowProvider } from './siliconflow.js';
+import { RoutewayProvider }    from './routeway.js';
+import { BazaarLinkProvider }  from './bazaarlink.js';
+import { AINativeProvider }    from './ainative.js';
+import { AionProvider }        from './aion.js';
+import { RequestyProvider }    from './requesty.js';
+import { NavyProvider }        from './navy.js';
+import { NaraProvider }        from './nara.js';
+import { SeaLionProvider }     from './sealion.js';
+import { OrcaRouterProvider }  from './orcarouter.js';
+import { UnoRouterProvider }   from './unorouter.js';
+import { XKiroProvider }       from './xkiro.js';
+import { ModelScopeProvider }  from './modelscope.js';
+import { QianfanProvider }     from './qianfan.js';
+import { VolcengineProvider }  from './volcengine.js';
+import { LongCatProvider }     from './longcat.js';
+import { XFyunProvider }       from './xfyun.js';
 import type { AIProvider }     from '../types.js';
 
 export type ProviderName =
   | 'openai' | 'anthropic' | 'gemini' | 'groq' | 'mistral'
   | 'deepseek' | 'openrouter' | 'xai' | 'cohere' | 'freellmapi'
   | 'cerebras' | 'nvidia' | 'github' | 'cloudflare' | 'huggingface'
-  | 'pollinations' | 'opencodezen' | 'zhipu' | 'ollama' | 'custom';
+  | 'pollinations' | 'opencodezen' | 'zhipu' | 'ollama' | 'custom'
+  | 'bai' | 'anyapi' | 'aihorde' | 'ollamacloud' | 'kilo'
+  | 'llm7' | 'ovh' | 'agnes' | 'reka' | 'siliconflow'
+  | 'routeway' | 'bazaarlink' | 'ainative' | 'aion' | 'requesty'
+  | 'navy' | 'nara' | 'sealion' | 'orcarouter' | 'unorouter'
+  | 'xkiro' | 'modelscope' | 'qianfan' | 'volcengine' | 'longcat'
+  | 'xfyun';
 
 interface ProviderEntry {
   factory: (() => AIProvider) | null; // null = env vars not set
@@ -62,6 +94,32 @@ const PROVIDERS: Record<ProviderName, ProviderEntry> = {
   zhipu:       { factory: () => new ZhipuProvider(),       envVars: ['ZHIPU_API_KEY'] },
   ollama:      { factory: () => new OllamaProvider(),      envVars: [] }, // keyless (local)
   custom:      { factory: () => new CustomEndpointProvider(), envVars: ['CUSTOM_BASE_URL'] },
+  bai:         { factory: () => new BAIProvider(),         envVars: ['BAI_API_KEY'] },
+  anyapi:      { factory: () => new AnyAPIProvider(),      envVars: ['ANYAPI_API_KEY'] },
+  aihorde:     { factory: () => new AIHordeProvider(),     envVars: [] }, // keyless (anonymous)
+  ollamacloud: { factory: () => new OllamaCloudProvider(), envVars: ['OLLAMACLOUD_API_KEY'] },
+  kilo:        { factory: () => new KiloProvider(),        envVars: [] }, // keyless
+  llm7:        { factory: () => new LLM7Provider(),        envVars: ['LLM7_API_KEY'] },
+  ovh:         { factory: () => new OVHProvider(),         envVars: [] }, // keyless
+  agnes:       { factory: () => new AgnesProvider(),       envVars: ['AGNES_API_KEY'] },
+  reka:        { factory: () => new RekaProvider(),        envVars: ['REKA_API_KEY'] },
+  siliconflow: { factory: () => new SiliconFlowProvider(), envVars: ['SILICONFLOW_API_KEY'] },
+  routeway:    { factory: () => new RoutewayProvider(),    envVars: ['ROUTEWAY_API_KEY'] },
+  bazaarlink:  { factory: () => new BazaarLinkProvider(),  envVars: ['BAZAARLINK_API_KEY'] },
+  ainative:    { factory: () => new AINativeProvider(),    envVars: ['AINATIVE_API_KEY'] },
+  aion:        { factory: () => new AionProvider(),        envVars: ['AION_API_KEY'] },
+  requesty:    { factory: () => new RequestyProvider(),    envVars: ['REQUESTY_API_KEY'] },
+  navy:        { factory: () => new NavyProvider(),        envVars: ['NAVY_API_KEY'] },
+  nara:        { factory: () => new NaraProvider(),        envVars: ['NARA_API_KEY'] },
+  sealion:     { factory: () => new SeaLionProvider(),     envVars: ['SEALION_API_KEY'] },
+  orcarouter:  { factory: () => new OrcaRouterProvider(),  envVars: ['ORCAROUTER_API_KEY'] },
+  unorouter:   { factory: () => new UnoRouterProvider(),   envVars: ['UNOROUTER_API_KEY'] },
+  xkiro:       { factory: () => new XKiroProvider(),       envVars: ['XKIRO_API_KEY'] },
+  modelscope:  { factory: () => new ModelScopeProvider(),  envVars: ['MODELSCOPE_API_KEY'] },
+  qianfan:     { factory: () => new QianfanProvider(),     envVars: ['QIANFAN_API_KEY'] },
+  volcengine:  { factory: () => new VolcengineProvider(),  envVars: ['VOLCENGINE_API_KEY'] },
+  longcat:     { factory: () => new LongCatProvider(),     envVars: ['LONGCAT_API_KEY'] },
+  xfyun:       { factory: () => new XFyunProvider(),       envVars: ['XFYUN_API_KEY'] },
 };
 
 /** Lazy instances — initialized once on first use. */
