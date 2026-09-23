@@ -1,17 +1,19 @@
-/**
- * Ashbound — Entry point
- * Bootstraps Discord client, AI providers, and web server.
- */
-
-import 'dotenv/config';
-import { bootstrap, setupGracefulShutdown } from './bootstrap/index.js';
-
-async function main(): Promise<void> {
-  const application = await bootstrap();
-  setupGracefulShutdown(application);
+import { log } from "./logger";
+import { validateConfig } from "./config/env";
+import { databaseManager } from "./storage/database";
+import { discordClient } from "./discord/client";
+import { registerDefaultTools } from "./minecraft/tools";
+import { gracefulShutdown } from "./bootstrap/application";
+async function start(): Promise<void> {
+  log.info("main", "start", "Starting Ashbound");
+  validateConfig();
+  await databaseManager.migrate();
+  registerDefaultTools();
+  await discordClient.login();
+  gracefulShutdown.onSignal(async () => {
+    await discordClient.logout();
+    databaseManager.close();
+  });
+  log.info("main", "ready", "Ashbound running");
 }
-
-main().catch((err) => {
-  console.error('[Ashbound] Fatal startup error:', err);
-  process.exit(1);
-});
+start().catch((error) => { log.error("main", "fatal", `Failed: ${error}`); process.exit(1); });
