@@ -1,0 +1,2 @@
+# Ashbound
+Discord, mc bot
