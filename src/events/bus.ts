@@ -1,15 +1,32 @@
 import { log } from "../logger";
+import { ProviderHealth, ModelInfo } from "./types";
 type Handler<T = unknown> = (data: T) => void | Promise<void>;
-interface EventMap {
+export interface EventMap {
   "DiscordConnected": { guildId: string }; "DiscordDisconnected": { reason: string };
   "MinecraftConnecting": { host: string; port: number; username: string };
   "MinecraftConnected": { sessionId: string; host: string; port: number };
   "MinecraftDisconnected": { sessionId: string; reason: string };
+  "MinecraftReconnecting": { sessionId: string; attempt: number };
   "GoalCreated": { goalId: string; description: string }; "GoalStarted": { goalId: string };
   "GoalCompleted": { goalId: string }; "GoalFailed": { goalId: string; reason: string };
-  "GoalCancelled": { goalId: string }; "AgentActionStarted": { actionId: string; tool: string; args: unknown };
+  "GoalCancelled": { goalId: string }; "GoalProgressed": { goalId: string; progress: number };
+  "AgentActionStarted": { actionId: string; tool: string; args: unknown };
   "AgentActionCompleted": { actionId: string; result: unknown }; "AgentActionFailed": { actionId: string; error: string };
-  "SessionCreated": { sessionId: string; ownerId: string }; "Shutdown": { reason: string };
+  "SessionCreated": { sessionId: string; ownerId: string }; "SessionStopped": { sessionId: string };
+  "SessionConnected": { sessionId: string }; "SessionDisconnected": { sessionId: string; reason: string };
+  "SessionReconnecting": { sessionId: string; attempt: number };
+  "AIProviderFailed": { providerId: string; error: string };
+  "AIProviderHealthChanged": { providerId: string; health: ProviderHealth };
+  "AIFallbackTriggered": { fromProvider: string; toProvider: string; reason: string };
+  "AIProviderRegistered": { providerId: string; name: string; models: ModelInfo[] };
+  "AIProviderUnregistered": { providerId: string };
+  "AIRequestStarted": { providerId: string; model: string };
+  "AIRequestCompleted": { providerId: string; model: string; duration: number; tokensUsed: number };
+  "ResourceWarning": { resource: string; percent: number; level: ResourceLevel };
+  "ResourceCritical": { resource: string; percent: number; level: ResourceLevel };
+  "PermissionChanged": { guildId: string; userId: string; role: GuildRole };
+  "SettingChanged": { guildId: string; key: string; value: unknown };
+  "Shutdown": { reason: string }; "ServerStarted": { port: number };
 }
 export class EventBus {
   private handlers: Map<string, Set<Handler>> = new Map();

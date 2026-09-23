@@ -7,4 +7,4 @@ export { CircuitBreaker } from "./circuit-breaker";
 export { ProviderHealthMonitor } from "./health-monitor";
 export { ProviderQuotaManager } from "./quota-manager";
 export { ProviderFallbackManager } from "./fallback-manager";
-
+export { aiProvider } from "./provider";
