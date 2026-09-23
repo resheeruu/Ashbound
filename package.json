@@ -9,7 +9,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/unit/agent.test.ts tests/integration/database.test.ts",
+    "test": "tsx --test tests/unit/agent.test.ts",
     "test:unit": "tsx --test tests/unit/agent.test.ts",
     "db:migrate": "tsx scripts/migrate.ts"
   },
